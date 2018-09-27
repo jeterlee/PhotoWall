@@ -12,20 +12,22 @@ package com.github.jeterlee.photowall.cache;
 
 public interface ICache {
     /**
-     * 写入索引key对应的缓存
-     *
-     * @param key   索引key
-     * @param value 缓存内容
-     */
-    void put(String key, Object value);
-
-    /**
-     * 根据索引key获取对应的缓存
+     * 对应的索引key存放对象
      *
      * @param key 索引key
-     * @return 对应索引key的缓存内容
+     * @param e   对象
+     * @param <E> 对象
      */
-    Object get(String key);
+    <E> void put(String key, E e);
+
+    /**
+     * 根据索引key获取对应对象
+     *
+     * @param key 索引key
+     * @param <E> 对象
+     * @return 对象
+     */
+    <E> E get(String key);
 
     /**
      * 判断是否有对应索引key的缓存
@@ -39,15 +41,9 @@ public interface ICache {
      * 根据索引key移除对应的缓存
      *
      * @param key 索引key
+     * @return {@code true}: 移除成功<br>{@code false}: 移除失败
      */
-    void remove(String key);
-
-    /**
-     * 缓存大小
-     *
-     * @return 缓存大小
-     */
-    long size();
+    boolean remove(String key);
 
     /**
      * 清除所有缓存

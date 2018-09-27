@@ -1,6 +1,5 @@
 package com.github.jeterlee.photowall.cache;
 
-import android.support.annotation.NonNull;
 import android.support.v4.util.LruCache;
 
 /**
@@ -14,12 +13,11 @@ import android.support.v4.util.LruCache;
  */
 
 public class MemoryCacheManager implements ICache {
-    private static final String TAG = "MemoryCacheManager";
+
     private LruCache<String, Object> cache;
-    private static MemoryCacheManager instance;
 
     public MemoryCacheManager() {
-        // 获取应用程序最大可用内存（默认为程序最大可用内存的1/8）
+        // 获取应用程序最大可用内存（默认为程序最大可用内存的 1/8）
         this((int) Runtime.getRuntime().maxMemory() / 1024 / 8);
     }
 
@@ -33,37 +31,66 @@ public class MemoryCacheManager implements ICache {
     }
 
     @Override
-    public synchronized void put(@NonNull String key, Object value) {
-        if (cache.get(key) != null) {
-            cache.remove(key);
-        }
-        cache.put(key, value);
-    }
-
-    @Override
-    public Object get(@NonNull String key) {
-        return cache.get(key);
-    }
-
-    @Override
-    public void remove(@NonNull String key) {
-        if (cache.get(key) != null) {
-            cache.remove(key);
+    public <E> void put(String key, E e) {
+        try {
+            if (cache.get(key) != null) {
+                cache.remove(key);
+            }
+            cache.put(key, e);
+        } catch (Exception e1) {
+            e1.printStackTrace();
         }
     }
 
     @Override
-    public boolean contains(@NonNull String key) {
-        return cache.get(key) != null;
+    public <E> E get(String key) {
+        try {
+            //noinspection unchecked
+            return (E) cache.get(key);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return null;
     }
 
     @Override
-    public long size() {
-        return cache.size();
+    public boolean contains(String key) {
+        try {
+            return cache.get(key) != null;
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return false;
+    }
+
+    @Override
+    public boolean remove(String key) {
+        try {
+            if (cache.get(key) != null) {
+                cache.remove(key);
+            }
+            return cache.get(key) == null;
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return false;
     }
 
     @Override
     public void clear() {
-        cache.evictAll();
+        try {
+            cache.evictAll();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    public long size() {
+        try {
+            return cache.size();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return -1;
     }
 }

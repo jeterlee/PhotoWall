@@ -28,7 +28,10 @@ import java.util.Objects;
 
 public class MemoryUtil {
     private static final int ERROR = -1;
-    private static final int AVALIABLE_EXTERNAL_MEMORY_SIZE = 50 * 1024 * 1024; // 50MB
+    /**
+     * 50MB
+     */
+    private static final int AVAILABLE_EXTERNAL_MEMORY_SIZE = 50 * 1024 * 1024;
 
     /**
      * Judge whether external momory is available
@@ -41,7 +44,7 @@ public class MemoryUtil {
      * Judge whether external memory is full
      */
     public static boolean isExternalMemoryFull() {
-        return getAvailableExternalMemorySize() - AVALIABLE_EXTERNAL_MEMORY_SIZE < 0;
+        return getAvailableExternalMemorySize() - AVAILABLE_EXTERNAL_MEMORY_SIZE < 0;
     }
 
     /**

@@ -1,9 +1,18 @@
 package com.github.jeterlee.photowall.cache;
 
 import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.drawable.Drawable;
 import android.support.annotation.IntDef;
+import android.support.annotation.NonNull;
 import android.text.TextUtils;
+import android.util.Log;
 
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import java.io.File;
+import java.io.IOException;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 
@@ -18,18 +27,8 @@ import java.lang.annotation.RetentionPolicy;
  */
 
 public class CacheManager implements ICache {
-    /**
-     * 只使用内存缓存（LruCache）
-     */
-    public static final int ONLY_MEMORY = 1;
-    /**
-     * 只使用硬盘缓存（DiskLruCache）
-     */
-    public static final int ONLY_DISK = 2;
-    /**
-     * 同时使用内存缓存（LruCache）与硬盘缓存（DiskLruCache）
-     */
-    public static final int ALL_ALLOW = 0;
+    private static final String TAG = "CacheManager";
+
     /**
      * 设置内存缓存的最大值，单位：byte
      */
@@ -42,19 +41,11 @@ public class CacheManager implements ICache {
      * 设置自定义的硬盘缓存文件夹名称
      */
     private String diskCacheDirName = "";
-    /**
-     * 设置硬盘缓存的有效时间，默认为永久不过期，单位：ms
-     */
-    private long diskCacheTime = DiskCacheManager.CACHE_NEVER_EXPIRE;
+    private File diskCacheFileDir;
     private Context context;
     private int cacheMode;
     private MemoryCacheManager memoryCacheManager;
     private DiskCacheManager diskCacheManager;
-
-    @IntDef({ALL_ALLOW, ONLY_MEMORY, ONLY_DISK})
-    @Retention(RetentionPolicy.SOURCE)
-    public @interface CacheMode {
-    }
 
     private CacheManager() {
     }
@@ -68,22 +59,22 @@ public class CacheManager implements ICache {
     }
 
     public void init(Context context) {
-        init(context, CacheManager.ALL_ALLOW);
+        init(context, CacheMode.ALL_ALLOW);
     }
 
-    public void init(Context context, @CacheMode int cacheMode) {
+    public void init(Context context, @CacheMode.Mode int cacheMode) {
         this.context = context;
         this.cacheMode = cacheMode;
         switch (cacheMode) {
-            case CacheManager.ALL_ALLOW:
+            case CacheMode.ALL_ALLOW:
             default:
                 initMemoryCacheManager();
                 initDiskCacheManager();
                 break;
-            case CacheManager.ONLY_MEMORY:
+            case CacheMode.ONLY_MEMORY:
                 initMemoryCacheManager();
                 break;
-            case CacheManager.ONLY_DISK:
+            case CacheMode.ONLY_DISK:
                 initDiskCacheManager();
                 break;
         }
@@ -104,37 +95,24 @@ public class CacheManager implements ICache {
      * 初始化硬盘缓存管理
      */
     private void initDiskCacheManager() {
-        if (maxDiskCacheSize > 0) {
-            if (!TextUtils.isEmpty(diskCacheDirName)) {
-                if (diskCacheTime > 0) {
-                    diskCacheManager = new DiskCacheManager(context, DiskCacheManager.getDiskCacheDir(context, diskCacheDirName)
-                            , maxDiskCacheSize).setCacheTime(diskCacheTime);
-                } else {
-                    diskCacheManager = new DiskCacheManager(context, DiskCacheManager.getDiskCacheDir(context, diskCacheDirName)
-                            , maxDiskCacheSize);
-                }
-            } else {
-                if (diskCacheTime > 0) {
-                    diskCacheManager = new DiskCacheManager(context, maxDiskCacheSize)
-                            .setCacheTime(diskCacheTime);
+        try {
+            if (maxDiskCacheSize > 0) {
+                if (!TextUtils.isEmpty(diskCacheDirName)) {
+                    diskCacheManager = new DiskCacheManager(context, diskCacheDirName, maxDiskCacheSize);
+                } else if (diskCacheFileDir != null) {
+                    diskCacheManager = new DiskCacheManager(context, diskCacheFileDir, maxDiskCacheSize);
                 } else {
                     diskCacheManager = new DiskCacheManager(context, maxDiskCacheSize);
                 }
-            }
-        } else if (!TextUtils.isEmpty(diskCacheDirName)) {
-            if (diskCacheTime > 0) {
-                diskCacheManager = new DiskCacheManager(context, diskCacheDirName)
-                        .setCacheTime(diskCacheTime);
-            } else {
+            } else if (!TextUtils.isEmpty(diskCacheDirName)) {
                 diskCacheManager = new DiskCacheManager(context, diskCacheDirName);
-            }
-        } else {
-            if (diskCacheTime > 0) {
-                diskCacheManager = new DiskCacheManager(context)
-                        .setCacheTime(diskCacheTime);
+            } else if (diskCacheFileDir != null) {
+                diskCacheManager = new DiskCacheManager(context, diskCacheFileDir);
             } else {
                 diskCacheManager = new DiskCacheManager(context);
             }
+        } catch (IOException e) {
+            e.printStackTrace();
         }
     }
 
@@ -145,23 +123,41 @@ public class CacheManager implements ICache {
      * @param value 缓存内容
      */
     @Override
-    public void put(String key, Object value) {
+    public <E> void put(String key, E value) {
         switch (cacheMode) {
-            case CacheManager.ALL_ALLOW:
+            case CacheMode.ALL_ALLOW:
             default:
                 if (memoryCacheManager != null && diskCacheManager != null) {
                     // 设置硬盘缓存成功后，再设置内存缓存
-                    diskCacheManager.put(key, value);
+                    Log.i(TAG, "put: set disk cache!");
+                    if (value instanceof String) {
+                        diskCacheManager.put(key, (String) value);
+                    } else if (value instanceof JSONObject) {
+                        diskCacheManager.put(key, (JSONObject) value);
+                    } else if (value instanceof JSONArray) {
+                        diskCacheManager.put(key, (JSONArray) value);
+                    } else if (value instanceof byte[]) {
+                        diskCacheManager.put(key, (byte[]) value);
+                    } else if (value instanceof Bitmap) {
+                        diskCacheManager.put(key, (Bitmap) value);
+                    } else if (value instanceof Drawable) {
+                        diskCacheManager.put(key, (Drawable) value);
+                    } else {
+                        diskCacheManager.put(key, value);
+                    }
+                    Log.i(TAG, "put: set memory cache!");
                     memoryCacheManager.put(key, value);
                 }
                 break;
-            case CacheManager.ONLY_MEMORY:
+            case CacheMode.ONLY_MEMORY:
                 if (memoryCacheManager != null) {
+                    Log.i(TAG, "put: set disk cache!");
                     memoryCacheManager.put(key, value);
                 }
                 break;
-            case CacheManager.ONLY_DISK:
+            case CacheMode.ONLY_DISK:
                 if (diskCacheManager != null) {
+                    Log.i(TAG, "put: set memory cache!");
                     diskCacheManager.put(key, value);
                 }
                 break;
@@ -175,32 +171,86 @@ public class CacheManager implements ICache {
      * @return key索引对应的缓存数据
      */
     @Override
-    public Object get(String key) {
-        Object object = null;
+    public <E> E get(String key) {
+        return get(key, CacheType.SERIALIZABLE_TYPE);
+    }
+
+    public <E> E get(String key, @CacheType.Types int cacheType) {
+        E e = null;
         switch (cacheMode) {
-            case CacheManager.ALL_ALLOW:
+            case CacheMode.ALL_ALLOW:
             default:
                 if (memoryCacheManager != null && diskCacheManager != null) {
-                    object = memoryCacheManager.get(key);
-                    if (object == null) {
+                    e = memoryCacheManager.get(key);
+                    if (e == null) {
                         // 如果硬盘缓存内容存在，内存缓存不存在。则在获取硬盘缓存后，将内容写入内存缓存
-                        object = diskCacheManager.get(key);
-                        memoryCacheManager.put(key, object);
+                        // 设置硬盘缓存成功后，再设置内存缓存
+                        e = getByCacheType(key, cacheType);
+                        if (e != null) {
+                            Log.i(TAG, "get: use disk cache & put memory cache!");
+                            memoryCacheManager.put(key, e);
+                        } else {
+                            Log.i(TAG, "get: no memory cache & no disk cache!");
+                        }
+                    } else {
+                        Log.i(TAG, "get: use memory cache!");
                     }
                 }
                 break;
-            case CacheManager.ONLY_MEMORY:
+            case CacheMode.ONLY_MEMORY:
                 if (memoryCacheManager != null) {
-                    object = memoryCacheManager.get(key);
+                    e = memoryCacheManager.get(key);
+                    if (e != null) {
+                        Log.i(TAG, "get: use memory cache!");
+                    }
                 }
                 break;
-            case CacheManager.ONLY_DISK:
+            case CacheMode.ONLY_DISK:
                 if (diskCacheManager != null) {
-                    object = diskCacheManager.get(key);
+                    e = getByCacheType(key, cacheType);
+                    if (e != null) {
+                        Log.i(TAG, "get: use disk cache!");
+                    }
                 }
                 break;
         }
-        return object;
+        return e;
+    }
+
+    private <E> E getByCacheType(String key, @CacheType.Types int cacheType) {
+        E e;
+        switch (cacheType) {
+            case CacheType.STRING_TYPE:
+                // noinspection unchecked
+                e = (E) diskCacheManager.getAsString(key);
+                break;
+            case CacheType.JSON_OBJECT_TYPE:
+                // noinspection unchecked
+                e = (E) diskCacheManager.getAsJSONObject(key);
+                break;
+            case CacheType.JSON_ARRAY_TYPE:
+                // noinspection unchecked
+                e = (E) diskCacheManager.getAsJSONArray(key);
+                break;
+            case CacheType.BYTES_TYPE:
+                // noinspection unchecked
+                e = (E) diskCacheManager.getAsBinary(key);
+                break;
+            case CacheType.BITMAP_TYPE:
+                // noinspection unchecked
+                e = (E) diskCacheManager.getAsBitmap(key);
+                break;
+            case CacheType.DRAWABLE_TYPE:
+                // noinspection unchecked
+                e = (E) diskCacheManager.getAsDrawable(key);
+                break;
+            case CacheType.SERIALIZABLE_TYPE:
+            default:
+                // noinspection unchecked
+                e = diskCacheManager.get(key);
+                break;
+        }
+        return e;
     }
 
     /**
@@ -211,55 +261,55 @@ public class CacheManager implements ICache {
      */
     @Override
     public boolean contains(String key) {
-        boolean isContain = false;
         switch (cacheMode) {
-            case CacheManager.ALL_ALLOW:
+            case CacheMode.ALL_ALLOW:
             default:
                 if (memoryCacheManager != null && diskCacheManager != null) {
                     // 硬盘缓存或内存缓存中寻找
                     return memoryCacheManager.contains(key) || diskCacheManager.contains(key);
                 }
                 break;
-            case CacheManager.ONLY_MEMORY:
+            case CacheMode.ONLY_MEMORY:
                 if (memoryCacheManager != null) {
-                    isContain = memoryCacheManager.contains(key);
+                    return memoryCacheManager.contains(key);
                 }
                 break;
-            case CacheManager.ONLY_DISK:
+            case CacheMode.ONLY_DISK:
                 if (diskCacheManager != null) {
-                    isContain = diskCacheManager.contains(key);
+                    return diskCacheManager.contains(key);
                 }
                 break;
         }
-        return isContain;
+        return false;
     }
 
     /**
      * 移除一条索引key对应的缓存
      *
      * @param key 索引
+     * @return {@code true}: 移除成功<br>{@code false}: 移除失败
      */
     @Override
-    public void remove(String key) {
+    public boolean remove(String key) {
         switch (cacheMode) {
-            case CacheManager.ALL_ALLOW:
+            case CacheMode.ALL_ALLOW:
             default:
                 if (memoryCacheManager != null && diskCacheManager != null) {
-                    memoryCacheManager.remove(key);
-                    diskCacheManager.remove(key);
+                    return memoryCacheManager.remove(key) && diskCacheManager.remove(key);
                 }
                 break;
-            case CacheManager.ONLY_MEMORY:
+            case CacheMode.ONLY_MEMORY:
                 if (memoryCacheManager != null) {
-                    memoryCacheManager.remove(key);
+                    return memoryCacheManager.remove(key);
                 }
                 break;
-            case CacheManager.ONLY_DISK:
+            case CacheMode.ONLY_DISK:
                 if (diskCacheManager != null) {
-                    diskCacheManager.remove(key);
+                    return diskCacheManager.remove(key);
                 }
                 break;
         }
+        return false;
     }
 
     /**
@@ -267,11 +317,10 @@ public class CacheManager implements ICache {
      *
      * @return 缓存大小
      */
-    @Override
     public long size() {
         int size = 0;
         switch (cacheMode) {
-            case CacheManager.ALL_ALLOW:
+            case CacheMode.ALL_ALLOW:
             default:
                 if (memoryCacheManager != null) {
                     size += memoryCacheManager.size();
@@ -280,12 +329,12 @@ public class CacheManager implements ICache {
                     size += diskCacheManager.size();
                 }
                 break;
-            case CacheManager.ONLY_MEMORY:
+            case CacheMode.ONLY_MEMORY:
                 if (memoryCacheManager != null) {
                     size += memoryCacheManager.size();
                 }
                 break;
-            case CacheManager.ONLY_DISK:
+            case CacheMode.ONLY_DISK:
                 if (diskCacheManager != null) {
                     size += diskCacheManager.size();
                 }
@@ -300,19 +349,19 @@ public class CacheManager implements ICache {
     @Override
     public void clear() {
         switch (cacheMode) {
-            case CacheManager.ALL_ALLOW:
+            case CacheMode.ALL_ALLOW:
             default:
                 if (memoryCacheManager != null && diskCacheManager != null) {
                     memoryCacheManager.clear();
                     diskCacheManager.clear();
                 }
                 break;
-            case CacheManager.ONLY_MEMORY:
+            case CacheMode.ONLY_MEMORY:
                 if (memoryCacheManager != null) {
                     memoryCacheManager.clear();
                 }
                 break;
-            case CacheManager.ONLY_DISK:
+            case CacheMode.ONLY_DISK:
                 if (diskCacheManager != null) {
                     diskCacheManager.clear();
                 }
@@ -325,17 +374,17 @@ public class CacheManager implements ICache {
      */
     public void flush() {
         switch (cacheMode) {
-            case CacheManager.ALL_ALLOW:
+            case CacheMode.ALL_ALLOW:
             default:
                 if (memoryCacheManager != null && diskCacheManager != null) {
-                    diskCacheManager.flushCache();
+                    diskCacheManager.flush();
                 }
                 break;
-            case CacheManager.ONLY_MEMORY:
+            case CacheMode.ONLY_MEMORY:
                 break;
-            case CacheManager.ONLY_DISK:
+            case CacheMode.ONLY_DISK:
                 if (diskCacheManager != null) {
-                    diskCacheManager.flushCache();
+                    diskCacheManager.flush();
                 }
                 break;
         }
@@ -353,9 +402,21 @@ public class CacheManager implements ICache {
     }
 
     public void close() {
-        if (diskCacheManager != null) {
-            diskCacheManager.close();
+        try {
+            if (diskCacheManager != null) {
+                diskCacheManager.close();
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
         }
+    }
+
+    public DiskLruCache.Editor getEditor(@NonNull String key) {
+        return diskCacheManager != null ? diskCacheManager.getEditor(key) : null;
+    }
+
+    public DiskLruCache.Snapshot getSnapshot(@NonNull String key) {
+        return diskCacheManager != null ? diskCacheManager.getSnapshot(key) : null;
     }
 
     /**
@@ -381,7 +442,7 @@ public class CacheManager implements ICache {
     }
 
     /**
-     * 设置硬盘缓存自定义的文件名
+     * 设置硬盘缓存自定义的文件名（setDiskCacheDirName 和 setDiskCacheFileDir 只能调用其一 ）
      *
      * @param dirName 自定义文件名
      * @return CacheManager
@@ -392,13 +453,49 @@ public class CacheManager implements ICache {
     }
 
     /**
-     * 设置硬盘缓存的有效时间
+     * 设置硬盘缓存自定义的文件（setDiskCacheDirName 和 setDiskCacheFileDir 只能调用其一 ）
      *
-     * @param cacheTime 有效时间，单位：ms
+     * @param file 自定义文件
      * @return CacheManager
      */
-    public CacheManager setDiskCacheTime(long cacheTime) {
-        this.diskCacheTime = cacheTime;
+    public CacheManager setDiskCacheFileDir(File file) {
+        this.diskCacheFileDir = file;
         return this;
+    }
+
+    static class CacheMode {
+        /**
+         * 只使用内存缓存（LruCache）
+         */
+        static final int ONLY_MEMORY = 1;
+        /**
+         * 只使用硬盘缓存（DiskLruCache）
+         */
+        static final int ONLY_DISK = 2;
+        /**
+         * 同时使用内存缓存（LruCache）与硬盘缓存（DiskLruCache）
+         */
+        static final int ALL_ALLOW = 0;
+
+        @IntDef({ALL_ALLOW, ONLY_MEMORY, ONLY_DISK})
+        @Retention(RetentionPolicy.SOURCE)
+        @interface Mode {
+        }
+    }
+
+    public static class CacheType {
+        public static final int STRING_TYPE = 0;
+        public static final int JSON_OBJECT_TYPE = 1;
+        public static final int JSON_ARRAY_TYPE = 2;
+        public static final int BYTES_TYPE = 3;
+        public static final int BITMAP_TYPE = 4;
+        public static final int DRAWABLE_TYPE = 5;
+        public static final int SERIALIZABLE_TYPE = 6;
+
+        @IntDef({STRING_TYPE, JSON_OBJECT_TYPE, JSON_ARRAY_TYPE,
+                BYTES_TYPE, BITMAP_TYPE, DRAWABLE_TYPE, SERIALIZABLE_TYPE})
+        @Retention(RetentionPolicy.SOURCE)
+        public @interface Types {
+        }
     }
 }

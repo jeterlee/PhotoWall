@@ -9,6 +9,7 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.io.Serializable;
 
 /**
  * <pre>
@@ -37,20 +38,21 @@ public class SharedPreferencesManager implements ICache {
     }
 
     public SharedPreferences getSharedPreferences() {
-        if (sp == null) {
-            throw new NullPointerException("SharedPreferences == null");
-        }
         return sp;
     }
 
     @Override
-    public void put(String key, Object ser) {
+    public <E> void put(String key, E e) {
+        putSerializable(key, (Serializable) e);
+    }
+
+    public <E extends Serializable> void putSerializable(String key, E value) {
         try {
-            Log.i(TAG, key + " put: " + ser);
-            if (ser == null) {
+            Log.i(TAG, key + " put: " + value);
+            if (value == null) {
                 sp.edit().remove(key).apply();
             } else {
-                byte[] bytes = SharedPreferencesManager.objectToByte(ser);
+                byte[] bytes = objectToByte(value);
                 bytes = Base64.encode(bytes, Base64.DEFAULT);
                 put(key, HexUtil.encodeHexStr(bytes));
             }
@@ -60,21 +62,27 @@ public class SharedPreferencesManager implements ICache {
     }
 
     @Override
-    public Object get(String key) {
+    public <E> E get(String key) {
+        //noinspection unchecked
+        return (E) getSerializable(key, null);
+    }
+
+    public <E extends Serializable> E getSerializable(String key, E defValue) {
         try {
             String hex = get(key, null);
             if (hex == null) {
-                return null;
+                return defValue;
             }
             byte[] bytes = HexUtil.decodeHex(hex.toCharArray());
             bytes = Base64.decode(bytes, Base64.DEFAULT);
-            Object obj = SharedPreferencesManager.byteToObject(bytes);
+            Object obj = byteToObject(bytes);
             Log.i(TAG, key + " get: " + obj);
-            return obj;
+            //noinspection unchecked
+            return (E) obj;
         } catch (Exception e) {
             e.printStackTrace();
         }
-        return null;
+        return defValue;
     }
 
     @Override
@@ -83,13 +91,9 @@ public class SharedPreferencesManager implements ICache {
     }
 
     @Override
-    public void remove(String key) {
+    public boolean remove(String key) {
         sp.edit().remove(key).apply();
-    }
-
-    @Override
-    public long size() {
-        return 0;
+        return sp.contains(key);
     }
 
     @Override
@@ -117,7 +121,7 @@ public class SharedPreferencesManager implements ICache {
         sp.edit().putLong(key, value).apply();
     }
 
-    public void putInt(String key, int value) {
+    public void put(String key, int value) {
         sp.edit().putInt(key, value).apply();
     }
 
@@ -133,7 +137,7 @@ public class SharedPreferencesManager implements ICache {
         return sp.getFloat(key, defValue);
     }
 
-    public int getInt(String key, int defValue) {
+    public int get(String key, int defValue) {
         return sp.getInt(key, defValue);
     }
 
@@ -147,7 +151,7 @@ public class SharedPreferencesManager implements ICache {
      * @param bytes byte[] 字节数组
      * @return 对象
      */
-    public static Object byteToObject(byte[] bytes) throws Exception {
+    private Object byteToObject(byte[] bytes) throws Exception {
         ObjectInputStream ois = null;
         try {
             ois = new ObjectInputStream(new ByteArrayInputStream(bytes));
@@ -165,7 +169,7 @@ public class SharedPreferencesManager implements ICache {
      * @param obj 对象
      * @return byte[] 字节数组
      */
-    public static byte[] objectToByte(Object obj) throws Exception {
+    private byte[] objectToByte(Object obj) throws Exception {
         ObjectOutputStream oos = null;
         try {
             ByteArrayOutputStream bos = new ByteArrayOutputStream();
